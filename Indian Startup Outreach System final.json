@@ -1,0 +1,835 @@
+{
+  "name": "Indian Startup Outreach System",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "1129ab0d-7086-4956-bc24-b47527c68f61",
+      "name": "Daily Trigger - 8 AM IST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst seenNames = new Set();\nconst deduplicated = [];\n\nfor (const item of items) {\n  const data = item.json;\n\n  const name = data.company_name\n    ?.toLowerCase()\n    ?.replace(/[^a-z0-9 ]/g, '')\n    ?.trim();\n\n  if (!name) continue;\n\n  if (seenNames.has(name)) continue;\n\n  seenNames.add(name);\n  deduplicated.push({ json: data });\n}\n\nconsole.log(\n  `Deduplicated ${items.length - deduplicated.length} records`\n);\n\nreturn deduplicated;"
+      },
+      "id": "a608b1cc-f028-48ea-800a-81422d92b3c8",
+      "name": "Deduplication Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function extractCompanyName(text) {\n  if (!text) return \"\";\n  \n  let cleaned = text\n    .replace(/^(How|Why|What|When|Where|Inside|Behind|Beyond|Meet|Introducing|Startup|Company)\\s*[:,-]?\\s*/i, \"\")\n    .replace(/[:?].*$/s, \"\") \n    .replace(/'s\\s+.*$/i, \"\") \n    .replace(/\\s+(Is|Are|Was|Were|Has|Have|Had|Does|Did|Will|Would|Could|Should)\\s+.*$/i, \"\")\n    .replace(/\\s+(Went|Grew|Became|Turned|Plans|Aims|Looks|Seems|Finds)\\s+.*$/i, \"\")\n    .trim();\n  \n  const companyPattern = /\\b([A-Z][a-zA-Z0-9]*(?:\\.ai|\\.io|\\.co|\\.in|\\.tech)?(?:\\s+[A-Z][a-zA-Z0-9]*(?:\\.ai|\\.io|\\.co|\\.in|\\.tech)?){0,3})\\b/g;\n  const matches = cleaned.match(companyPattern);\n  \n  if (matches && matches.length > 0) {\n    const nonCompanies = /^(The|This|That|These|Those|Why|How|What|When|Where|Who|Which|While|With|Without|Within|Despite|During|Before|After|Above|Below|Between|Under|Over|Again|Further|Then|Once|Here|There|When|Where|Why|How|All|Any|Both|Each|Few|More|Most|Other|Some|Such|No|Nor|Not|Only|Own|Same|So|Than|Too|Very|Just|But|If|Or|Because|Until|While|Of|At|By|For|With|Through|During|Before|After|Above|Below|Up|Down|In|Out|On|Off|Over|Under|Again|Further|Then|Once)$/i;\n    \n    const validMatches = matches.filter(m => \n      m.length > 2 && \n      !nonCompanies.test(m) &&\n      !/^(Is|Are|Was|Were|Has|Have|Had|Does|Did|Will|Would|Could|Should|May|Might|Must|Shall|Can|Need|Dare|Used|Ought)$/i.test(m)\n    );\n    \n    if (validMatches.length > 0) {\n      return validMatches[0].trim();\n    }\n  }\n  \n  const words = cleaned.split(/\\s+/).filter(w => w.length > 2);\n  return words.slice(0, 3).join(\" \").trim();\n}\n\nconst text = `${$json.company_name || \"\"} ${$json.description || \"\"}`.toLowerCase();\nconst originalName = $json.company_name || \"\";\n\nlet industry = \"other\";\nlet score = 0.4;\nlet reason = \"low keyword match\";\n\n// 1. Fintech (Highest priority for financial keywords)\nif (/fintech|payments|upi|lending|loan|nbfc|microfinance|credit|bank|finance|insurtech|wealthtech|capital|investment|trading|stock|crypto|blockchain|wallet|remittance|payroll|expense|billing|invoice/i.test(text)) {\n  industry = \"fintech\";\n  score = 0.85;\n  reason = \"financial services keywords\";\n}\n\n// 2. Mobility (Transportation specific)\nelse if (/mobility|ride\\s*hailing|ride\\s*sharing|taxi|fleet|transport|logistics|supply\\s*chain|delivery|vehicle|ev|electric\\s*vehicle|autonomous|self\\s*driving|carpool|bike\\s*taxi|last\\s*mile/i.test(text)) {\n  industry = \"mobility\";\n  score = 0.75;\n  reason = \"mobility keywords\";\n}\n\n// 3. HealthTech (Healthcare specific)\nelse if (/healthtech|medtech|healthcare|health|hospital|clinic|medical|pharma|diagnostic|wellness|fitness|telemedicine|e\\s*pharmacy|biotech|lifesciences|patient|doctor|therapy|treatment/i.test(text)) {\n  industry = \"healthtech\";\n  score = 0.75;\n  reason = \"healthcare keywords\";\n}\n\n// 4. EdTech (Education specific)\nelse if (/edtech|education|learning|e\\s*learning|edtech|students|courses|training|upskilling|reskilling|mooc|tuition|coaching|academy|school|university|college|study/i.test(text)) {\n  industry = \"edtech\";\n  score = 0.75;\n  reason = \"education keywords\";\n}\n\n// 5. D2C (Consumer brands, retail, ecommerce)\nelse if (/d2c|direct\\s*to\\s*consumer|consumer\\s*brand|ecommerce|retail|marketplace|shopping|fashion|apparel|beauty|personal\\s*care|home\\s*care|food\\s*brand|beverage|consumer\\s*goods|cpg|lifestyle|wellness\\s*brand|cosmetics|skincare|haircare|nutrition/i.test(text)) {\n  industry = \"d2c\";\n  score = 0.75;\n  reason = \"consumer brand keywords\";\n}\n\n// 6. SaaS (B2B software, enterprise)\nelse if (/saas|b2b|enterprise\\s*software|cloud|api|crm|erp|hrtech|martech|salesforce|automation|workflow|collaboration|productivity|project\\s*management|analytics\\s*platform|business\\s*intelligence|data\\s*platform/i.test(text)) {\n  industry = \"saas\";\n  score = 0.8;\n  reason = \"saas keywords\";\n}\n\n// 7. Other (default - no specific match)\n\nconst extractedName = extractCompanyName(originalName);\n\nconst finalCompanyName = extractedName && extractedName.length > 2 && extractedName.length < 50 \n  ? extractedName \n  : originalName.replace(/^(How|Why|What|When|Where|Inside|Behind|Beyond|Meet|Introducing)\\s*[:,-]?\\s*/i, \"\").split(/[:?]/)[0].trim();\n\nreturn {\n  json: {\n    company_name: finalCompanyName,\n    startup_id: $json.startup_id,\n    website: $json.website || \"\",\n    description: $json.description || \"\",\n    location: $json.location || \"India\",\n    source: $json.source || \"discovery\",\n    discovered_date: $json.discovered_date,\n\n    primary_industry: industry,\n    classification_score: Number(score.toFixed(2)),\n    classification_confidence:\n      score >= 0.8 ? \"high\" : score >= 0.7 ? \"medium\" : \"low\",\n    classification_reason: reason,\n\n    confidence:\n      score >= 0.8 ? \"high\" : score >= 0.7 ? \"medium\" : \"low\"\n  }\n};"
+      },
+      "id": "bd9f611c-9fe8-4e65-913c-16b11eb1bb1f",
+      "name": "Industry Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.primary_industry }}",
+              "value2": "fintech"
+            },
+            {
+              "value1": "={{ $json.primary_industry }}",
+              "value2": "saas"
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "1c6d601a-0d8b-4f4a-a3db-423d7f13bd79",
+      "name": "Filter for Fintech",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2288,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const record = $input.item.json;\n\nfunction isValidUrl(string) {\n  if (!string) return false;\n  try {\n    const url = new URL(string);\n    return url.protocol === 'http:' || url.protocol === 'https:';\n  } catch (_) {\n    return false;\n  }\n}\n\nfunction cleanCompanyName(name) {\n  if (!name) return '';\n  \n  const suffixes = [\n    'private limited', 'pvt ltd', 'pvt. ltd.', 'limited', 'ltd',\n    'llp', 'llc', 'inc', 'technologies', 'tech', 'solutions', \n    'services', 'india'\n  ];\n  \n  let cleaned = name.toLowerCase();\n  const suffixPattern = new RegExp(`\\\\b(${suffixes.join('|')})\\\\b`, 'gi');\n  cleaned = cleaned.replace(suffixPattern, '');\n  \n  return cleaned\n    .replace(/[^\\w\\s-]/g, '')\n    .replace(/\\s+/g, '-')\n    .replace(/-+/g, '-')\n    .replace(/^-|-$/g, '')\n    .trim();\n}\n\nfunction extractDomainFromText(text) {\n  if (!text) return null;\n  const urlPattern = /https?:\\/\\/(?:www\\.)?([a-zA-Z0-9-]+\\.[a-zA-Z]{2,}(?:\\.[a-zA-Z]{2,})?)/gi;\n  const matches = text.match(urlPattern);\n  return matches && matches.length > 0 ? matches[0] : null;\n}\n\nif (record.website && isValidUrl(record.website) && !record.website.includes('.gov.in')) {\n  return { \n    json: { \n      ...record,\n      needs_web_search: false,\n      website_source: 'provided',\n      web_search_query: null\n    } \n  };\n}\n\nconst extractedFromDesc = extractDomainFromText(record.description || '');\nif (extractedFromDesc && isValidUrl(extractedFromDesc) && !extractedFromDesc.includes('.gov.in')) {\n  return {\n    json: {\n      ...record,\n      website: extractedFromDesc,\n      needs_web_search: false,\n      website_source: 'extracted_from_description',\n      web_search_query: null\n    }\n  };\n}\n\nconst cleanName = cleanCompanyName(record.company_name);\n\nif (!cleanName || cleanName.length < 3) {\n  return {\n    json: {\n      ...record,\n      website: null,\n      needs_web_search: false,\n      website_source: 'unable_to_generate',\n      web_search_query: null\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...record,\n    website: null,\n    cleaned_company_name: cleanName,\n    needs_web_search: true,\n    web_search_query: `${record.company_name} official website`,\n    website_source: 'pending_web_search'\n  }\n};"
+      },
+      "id": "cdcd73fa-1d73-4fdb-90c7-ccd42131c6ca",
+      "name": "Extract/Construct Website",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2544,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "/home/node/.n8n-files/startup_discovery.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        272
+      ],
+      "id": "37e4d22c-eccc-4302-875e-7e85b5307e5d",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1488,
+        272
+      ],
+      "id": "629b70bc-4613-49a1-b5bc-7c8862a611d6",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.data;\n\n// Parse JSON string\nconst parsed = JSON.parse(raw);\n\nconst startups = Array.isArray(parsed)\n  ? parsed\n  : Array.isArray(parsed.startups)\n    ? parsed.startups\n    : [];\n\nif (!startups.length) {\n  throw new Error(\"No startups array found in parsed JSON\");\n}\n\nreturn startups.map(startup => ({\n  json: startup\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        272
+      ],
+      "id": "9a460237-255e-4a91-b5ae-5a0a961e7b0a",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b8d5e674-9928-4e95-9084-8b86e8836f7c",
+              "leftValue": "={{ $json.needs_web_search }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "7de0af4c-00fc-4bf0-9f20-9f12f57a8ac2",
+              "leftValue": "={{ $json.company_name }}",
+              "rightValue": "Policybazaar",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2768,
+        256
+      ],
+      "id": "ae23ca2d-3419-4925-a739-d4ac49b53ccc",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=={{ $json.web_search_query }}"
+            },
+            {
+              "name": "api_key",
+              "value": "0ad699d91187a2d973d044f5aee2c3a57548369c493bab563940eff2ab5a0246"
+            },
+            {
+              "name": "engine",
+              "value": "google"
+            },
+            {
+              "name": "num",
+              "value": "3"
+            },
+            {
+              "name": "gl",
+              "value": "in"
+            },
+            {
+              "name": "hl",
+              "value": "en"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2976,
+        64
+      ],
+      "id": "18b9e563-5f7b-42ba-9e9b-3f4df938c3a3",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const record = $input.item.json;\nconst organicResults = record.organic_results || [];\n\nif (!organicResults || organicResults.length === 0) {\n  return {\n    json: {\n      website: null,\n      website_source: 'search_no_results',\n      search_status: 'no_results_found'\n    }\n  };\n}\n\nconst skipPatterns = [\n  'linkedin.com', 'facebook.com', 'twitter.com', 'instagram.com',\n  'indeed.com', 'glassdoor.com', 'crunchbase.com', 'tradingview.com',\n  'wikipedia.org', 'youtube.com', 'play.google.com', 'apps.apple.com',\n  'zaubacorp.com', 'tofler.in', 'companycheck.com', 'justdial.com',\n  'sulekha.com', 'indiamart.com', 'tradeindia.com', 'google.com/url',\n  'google.com/search', 'serpapi.com'\n];\n\nlet officialWebsite = null;\nlet websiteTitle = null;\n\nfor (const result of organicResults) {\n  let link = (result.link || '').trim();\n  \n  if (!link || !link.startsWith('http')) continue;\n  \n  const shouldSkip = skipPatterns.some(pattern => link.includes(pattern));\n  if (shouldSkip) continue;\n  \n  officialWebsite = link;\n  websiteTitle = result.title || '';\n  break;\n}\n\nif (officialWebsite) {\n  return {\n    json: {\n      website: officialWebsite,\n      website_source: 'web_search',\n      search_top_result: organicResults[0]?.link || null,\n      search_status: 'found',\n      search_title: websiteTitle,\n      validation_reason: 'web_search_verified'\n    }\n  };\n}\n\nreturn {\n  json: {\n    website: null,\n    website_source: 'search_no_valid_result',\n    search_status: 'no_valid_result'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        64
+      ],
+      "id": "f73b8a07-2dfd-478d-9bed-5d0b1f91b780",
+      "name": "Parse Search Results"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const searchResult = $input.item.json;\nconst originalData = $input.item.json; \nconst enriched = {\n  company_name: originalData.company_name,\n  startup_id: originalData.startup_id,\n  \n  // Website (from search or original)\n  website: searchResult.website || originalData.website || null,\n  website_source: searchResult.website_source || originalData.website_source || 'unknown',\n  \n  // Classification\n  primary_industry: originalData.primary_industry,\n  classification_score: originalData.classification_score,\n  classification_confidence: originalData.classification_confidence,\n  \n  // Location\n  location: originalData.location || 'India',\n  \n  // Source & validation\n  source: originalData.source,\n  is_valid_company: originalData.is_valid_company,\n  validation_reason: searchResult.validation_reason || originalData.validation_reason,\n  \n\n  founder_name: null,\n  founder_email: null,\n  business_description: null,\n  sub_sector: null,\n  target_customers: null,\n  startup_stage: null,\n  scraping_required: !!searchResult.website,\n  scraping_status: 'pending'\n};\n\nreturn { json: enriched };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3392,
+        64
+      ],
+      "id": "39e5ab3d-ab5c-42e2-b10b-c4184ef0c780",
+      "name": "Enrich Company Data"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\n  \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\",\n  \"Accept\": \"text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\",\n  \"Accept-Language\": \"en-US,en;q=0.9\",\n  \"Cache-Control\": \"no-cache\",\n  \"Pragma\": \"no-cache\",\n  \"Upgrade-Insecure-Requests\": \"1\"\n}\n",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 3
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3600,
+        64
+      ],
+      "id": "813ee5db-446a-4d58-8e40-4ce2d8dcafcc",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const extractCompanyData = (html, url) => {\n  if (!html) return null;\n  \n  const cleanHtml = html.replace(/\\\\r\\\\n/g, '\\n').replace(/\\\\\"/g, '\"');\n  \n  const getMetaContent = (name) => {\n    const match = cleanHtml.match(new RegExp(`<meta[^>]*name=[\"']${name}[\"'][^>]*content=[\"']([^\"']+)[\"']`, 'i'));\n    return match ? match[1].trim() : null;\n  };\n  \n  const getOgContent = (property) => {\n    const match = cleanHtml.match(new RegExp(`<meta[^>]*property=[\"']og:${property}[\"'][^>]*content=[\"']([^\"']+)[\"']`, 'i'));\n    return match ? match[1].trim() : null;\n  };\n  \n  const titleMatch = cleanHtml.match(/<title>([^<]+)<\\/title>/i);\n  const title = titleMatch ? titleMatch[1].trim() : null;\n  \n  const description = getMetaContent('description') || getOgContent('description') || null;\n  \n  let companyName = getOgContent('site_name');\n  if (!companyName && title) {\n    companyName = title.split(/[|\\-–]/)[0].trim();\n  }\n  \n  const cleanCompanyName = companyName ? companyName.replace(/(?:Pvt\\.?|Ltd\\.?|Limited|Inc\\.?|LLC|LLP|Corp\\.?|Corporation)\\s*$/i, '').trim() : '';\n  \n  const extractAllEmails = () => {\n    const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g;\n    const allMatches = cleanHtml.match(emailPattern) || [];\n    \n    const categorized = {\n      companyEmails: [],\n      publicEmails: [],\n      allEmails: []\n    };\n    \n    // Extract domain from URL\n    let companyDomain = '';\n    try {\n      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);\n      companyDomain = urlObj.hostname.replace('www.', '');\n    } catch (e) {\n      companyDomain = '';\n    }\n    \n    const seen = new Set();\n    \n    allMatches.forEach(email => {\n      const lowerEmail = email.toLowerCase();\n      if (seen.has(lowerEmail)) return;\n      seen.add(lowerEmail);\n      \n      const emailDomain = lowerEmail.split('@')[1];\n      \n      if (emailDomain && companyDomain && emailDomain.includes(companyDomain.replace('www.', '').split('.')[0])) {\n        categorized.companyEmails.push(email);\n      } else if (\n        ['sales', 'support', 'info', 'contact', 'hello', 'admin', 'careers', 'marketing', 'business', 'solutions', 'enquiry', 'help', 'service'].some(g => lowerEmail.includes(g + '@'))\n      ) {\n        categorized.publicEmails.push(email);\n      }\n      \n      categorized.allEmails.push(email);\n    });\n    \n    return categorized;\n  };\n  \n  const extractFounderInfo = () => {\n    const founders = [];\n    const founderEmails = [];\n    const searchTriggers = [];\n    \n    const founderPatterns = [\n      /<h[1-6][^>]*>[^<]*(?:founder|ceo|director|owner|promoter|managing director)[^<]*<\\/h[1-6]>[\\s\\S]*?<p[^>]*>([^<]+)<\\/p>/i,\n      /<[^>]*class=[\"'][^\"']*(?:founder|ceo|director|owner|team-member)[^\"']*[\"'][^>]*>[\\s\\S]*?<h[1-6][^>]*>([^<]+)<\\/h[1-6]>/i,\n      /(?:founder|ceo|director|owner)[:\\s]+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})/i,\n      /founded\\s+by[:\\s]+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})/i,\n      /(?:our\\s+)?founder[s]?[:\\s]+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})/i,\n      /leadership.*?(?:ceo|founder|director)[:\\s]+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})/i,\n      /promoter[s]?[:\\s]+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})/i,\n      /managing\\s+director[s]?[:\\s]+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})/i,\n      /author[\"']?\\s*[:=]\\s*[\"']?([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})/i\n    ];\n    \n    founderPatterns.forEach(pattern => {\n      const match = cleanHtml.match(pattern);\n      if (match && match[1]) {\n        const name = match[1].trim().replace(/(?:CEO|Founder|Director|Owner|MD)$/i, '').trim();\n        if (name.length > 2 && name.length < 50 && !name.includes('<')) {\n          founders.push(name);\n        }\n      }\n    });\n    \n    const teamPagePatterns = [\n      /href=[\"']([^\"']*(?:team|leadership|about|founder|director|management)[^\"']*)[\"']/i,\n      /href=[\"']([^\"']*about[^\"']*)[\"']/i\n    ];\n    \n    let teamPageUrl = null;\n    for (const pattern of teamPagePatterns) {\n      const match = cleanHtml.match(pattern);\n      if (match) {\n        teamPageUrl = match[1];\n        if (teamPageUrl && !teamPageUrl.startsWith('http')) {\n          try {\n            const baseUrl = url.startsWith('http') ? url : `https://${url}`;\n            teamPageUrl = new URL(teamPageUrl, baseUrl).href;\n          } catch (e) {}\n        }\n        break;\n      }\n    }\n    \n    const emailData = extractAllEmails();\n    emailData.allEmails.forEach(email => {\n      const localPart = email.split('@')[0].toLowerCase();\n      const genericTerms = ['sales', 'support', 'info', 'contact', 'hello', 'admin', 'careers', 'marketing', 'help', 'service', 'webmaster', 'noreply', 'newsletter', 'billing', 'hr', 'jobs'];\n      \n      if (localPart.length > 3 && !genericTerms.includes(localPart)) {\n        founderEmails.push({\n          email: email,\n          confidence: localPart.includes('.') || localPart.includes('_') ? 'high' : 'medium'\n        });\n      }\n    });\n    \n    const needsWebSearch = founders.length === 0 || founderEmails.length === 0;\n    \n    if (needsWebSearch && cleanCompanyName) {\n      searchTriggers.push({\n        type: 'founder_search',\n        priority: 'high',\n        query: `${cleanCompanyName} founder CEO director owner`,\n        searchUrl: `https://www.google.com/search?q=${encodeURIComponent(cleanCompanyName + ' founder CEO director')}`,\n        linkedinUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(cleanCompanyName + ' founder')}`,\n        reason: 'No founder names found in HTML'\n      });\n      \n      searchTriggers.push({\n        type: 'contact_search',\n        priority: 'medium',\n        query: `${cleanCompanyName} contact email phone`,\n        searchUrl: `https://www.google.com/search?q=${encodeURIComponent(cleanCompanyName + ' contact email')}`,\n        reason: 'No executive emails found in HTML'\n      });\n      \n      if (/cloud|aws|azure|google|it|tech|software/i.test(cleanHtml)) {\n        searchTriggers.push({\n          type: 'industry_search',\n          priority: 'low',\n          query: `${cleanCompanyName} CTO CIO managing director`,\n          searchUrl: `https://www.google.com/search?q=${encodeURIComponent(cleanCompanyName + ' CTO CIO leadership')}`,\n          reason: 'Tech company - looking for technical leadership'\n        });\n      }\n    }\n    \n    return {\n      names: founders,\n      emails: founderEmails,\n      teamPageUrl: teamPageUrl,\n      hasLeadershipSection: /leadership|management\\s+team|our\\s+team/i.test(cleanHtml),\n      needsWebSearch: needsWebSearch,\n      webSearchQueries: searchTriggers\n    };\n  };\n  \n  const extractBusinessContext = () => {\n    const services = [];\n    const serviceKeywords = [\n      { pattern: /cloud\\s+(?:consulting|migration|security|managed|services|solutions)/gi, label: 'Cloud Services' },\n      { pattern: /aws|amazon\\s+web\\s+services/gi, label: 'AWS' },\n      { pattern: /azure|microsoft\\s+azure/gi, label: 'Azure' },\n      { pattern: /google\\s+cloud|g\\s*suite|google\\s+workspace/gi, label: 'Google Cloud' },\n      { pattern: /office\\s*365|microsoft\\s*365/gi, label: 'Microsoft 365' },\n      { pattern: /internal\\s+audit|statutory\\s+audit/gi, label: 'Audit' },\n      { pattern: /tax\\s+(?:consulting|advisory|filing)/gi, label: 'Tax Services' },\n      { pattern: /accounting|book\\s*keeping|payroll/gi, label: 'Accounting' },\n      { pattern: /management\\s+consulting|business\\s+consulting/gi, label: 'Consulting' },\n      { pattern: /outsourcing|kpo|bpo/gi, label: 'Outsourcing' },\n      { pattern: /backup|disaster\\s+recovery/gi, label: 'Backup & DR' },\n      { pattern: /cybersecurity|security\\s+services/gi, label: 'Security' },\n      { pattern: /devops|data\\s+analytics/gi, label: 'DevOps & Analytics' }\n    ];\n    \n    serviceKeywords.forEach(({ pattern, label }) => {\n      if (pattern.test(cleanHtml) && !services.includes(label)) {\n        services.push(label);\n      }\n    });\n    \n    const industries = [];\n    if (/fintech|financial\\s+service|finance|banking|audit|tax/i.test(cleanHtml)) {\n      industries.push('Financial Services');\n    }\n    if (/cloud|aws|azure|google|it\\s+services|technology|software/i.test(cleanHtml)) {\n      industries.push('Information Technology');\n    }\n    if (/consulting|professional\\s+services|advisory/i.test(cleanHtml)) {\n      industries.push('Professional Services');\n    }\n    \n    const locationPatterns = [\n      /(?:address|location)[:\\s]+([^<,]+(?:,\\s*[^<,]+){0,3})/i,\n      /(Mumbai|Delhi|Bangalore|Hyderabad|Chennai|Pune|Ahmedabad|Gurgaon|Noida|Kolkata|Jaipur|Surat)/gi\n    ];\n    \n    let location = null;\n    for (const pattern of locationPatterns) {\n      const match = cleanHtml.match(pattern);\n      if (match) {\n        location = match[1] || match[0];\n        break;\n      }\n    }\n    \n    return { services, industries, location, description };\n  };\n  \n  const emailData = extractAllEmails();\n  const founderInfo = extractFounderInfo();\n  const businessContext = extractBusinessContext();\n  \n  let bestEmail = 'Not found';\n  if (founderInfo.emails.length > 0) {\n    bestEmail = founderInfo.emails[0].email;\n  } else if (emailData.companyEmails.length > 0) {\n    bestEmail = emailData.companyEmails[0];\n  } else if (emailData.publicEmails.length > 0) {\n    bestEmail = emailData.publicEmails[0];\n  }\n  \n  const webSearchActions = [];\n  \n  if (founderInfo.needsWebSearch) {\n    webSearchActions.push(...founderInfo.webSearchQueries);\n  }\n  \n  if (businessContext.services.length < 2 && cleanCompanyName) {\n    webSearchActions.push({\n      type: 'business_context_search',\n      priority: 'medium',\n      query: `${cleanCompanyName} services solutions what they do`,\n      searchUrl: `https://www.google.com/search?q=${encodeURIComponent(cleanCompanyName + ' services solutions')}`,\n      reason: 'Limited business context found in HTML'\n    });\n  }\n  \n  return {\n    url: url,\n    companyName: companyName || 'Unknown',\n    cleanCompanyName: cleanCompanyName,\n    \n    founderName: founderInfo.names[0] || 'NOT_FOUND - Web search required',\n    founderEmail: founderInfo.emails[0]?.email || bestEmail,\n    allFounderNames: founderInfo.names,\n    allFounderEmails: founderInfo.emails.map(e => e.email),\n    \n    businessContext1: businessContext.services.slice(0, 3).join(', ') || 'NOT_FOUND - Web search required',\n    businessContext2: businessContext.industries.join(', ') || 'Professional Services',\n    businessContext3: businessContext.description ? businessContext.description.substring(0, 250) : 'NOT_FOUND - Web search required',\n    \n    allEmails: {\n      companyDomain: emailData.companyEmails,\n      publicContacts: emailData.publicEmails,\n      allFound: emailData.allEmails\n    },\n    location: businessContext.location || 'NOT_FOUND',\n    teamPageUrl: founderInfo.teamPageUrl,\n    \n    requiresWebSearch: founderInfo.needsWebSearch || webSearchActions.length > 0,\n    webSearchActions: webSearchActions,\n    searchApiPayload: {\n      serperDev: webSearchActions.map(action => ({\n        q: action.query,\n        num: 5,\n        hl: 'en'\n      })),\n      rapidApi: webSearchActions.map(action => ({\n        query: action.query,\n        autoCorrect: true\n      }))\n    },\n    \n    recommendedNextSteps: founderInfo.needsWebSearch ? [\n      {\n        node: 'HTTP Request',\n        action: 'Call Serper.dev API or RapidAPI Google Search',\n        endpoint: 'https://google.serper.dev/search',\n        payload: {\n          q: `${cleanCompanyName} founder CEO director`,\n          apiKey: '{{$env.SERPER_API_KEY}}'\n        }\n      },\n      {\n        node: 'HTTP Request',\n        action: 'Scrape LinkedIn company page',\n        url: `https://www.linkedin.com/company/${cleanCompanyName.toLowerCase().replace(/\\s+/g, '-')}`\n      },\n      {\n        node: 'HTTP Request',\n        action: 'Check company registration (India)',\n        url: `https://www.zaubacorp.com/companysearch?q=${encodeURIComponent(cleanCompanyName)}`\n      }\n    ] : [],\n    \n    extractionQuality: {\n      hasFounderName: founderInfo.names.length > 0,\n      hasFounderEmail: founderInfo.emails.length > 0,\n      hasBusinessContext: businessContext.services.length >= 2,\n      hasLocation: !!businessContext.location,\n      overallScore: [founderInfo.names.length > 0, founderInfo.emails.length > 0, businessContext.services.length >= 2, !!businessContext.location].filter(Boolean).length + '/4'\n    }\n  };\n};\n\nconst results = items.map((item, index) => {\n  const html = item.json.data;\n  const url = item.json.website || item.json.url || `Item ${index + 1}`;\n  \n  return {\n    json: extractCompanyData(html, url)\n  };\n});\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3808,
+        64
+      ],
+      "id": "87966e9c-e512-465c-b57c-201696f67473",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fe9511fc-0f3b-4a84-ab31-6f56dac28c74",
+              "leftValue": "={{ $json.founderName }}",
+              "rightValue": "NOT_FOUND - Web search required",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "c5369a51-bbf7-47df-9c3b-cd92992e3693",
+              "leftValue": "={{ $json.companyName }}",
+              "rightValue": "Unknown",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4016,
+        64
+      ],
+      "id": "2d31ecb1-fc80-4092-a5a3-6042e9f36caf",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.webSearchActions?.[0]?.query }}"
+            },
+            {
+              "name": "num",
+              "value": "5"
+            },
+            {
+              "name": "hl",
+              "value": "en"
+            },
+            {
+              "name": "api_key",
+              "value": "0ad699d91187a2d973d044f5aee2c3a57548369c493bab563940eff2ab5a0246"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4256,
+        -144
+      ],
+      "id": "1d3ccabd-6698-4119-8604-2391e3146c75",
+      "name": "founder/email scrapping"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4896,
+        -144
+      ],
+      "id": "6c7c6913-a396-430e-b15d-947f7881d4c6",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const parseResults = (item, index) => {\n  const searchData = item.json;\n  \n  let companyName = searchData.search_parameters?.q?.replace(/ founder CEO director owner$/i, '') || `Company ${index + 1}`;\n  companyName = companyName.replace(/&amp;/g, '&').split(/[:|–-]/)[0].trim();\n  if (companyName.length > 50) companyName = companyName.substring(0, 50);\n  \n  const organicResults = searchData.organic_results || [];\n  \n  const extractWebsite = () => {\n    for (const result of organicResults) {\n      const link = result.link || '';\n      const match = link.match(/^(https?:\\/\\/(?:www\\.)?([^\\/]+))\\/?.*/);\n      if (match) {\n        const domain = match[2];\n        if (!domain.includes('linkedin.com') && \n            !domain.includes('wikipedia.org') &&\n            !domain.includes('rocketreach.co') &&\n            !domain.includes('tracxn.com') &&\n            !domain.includes('quora.com') &&\n            !domain.includes('fintechprofile.com') &&\n            !domain.includes('techcrunch.com')) {\n          return match[1].replace(/\\/$/, '');\n        }\n      }\n    }\n    return null;\n  };\n  \n  // Extract founder\n  const extractFounder = () => {\n    for (const result of organicResults) {\n      const snippet = result.snippet || '';\n      \n      const match1 = snippet.match(/((?:CA|Dr|Mr|Ms|Mrs)?\\.?\\s*[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)+)\\.\\s*(?:Founder|Co-Founder|CEO|Director)/);\n      if (match1) {\n        const name = match1[1].trim();\n        if (name.split(' ').length <= 4 && \n            !/under|by|will|as|the|and|meeting|we're|today/i.test(name)) {\n          return { name, role: 'Founder and CEO' };\n        }\n      }\n      \n      const match2 = snippet.match(/founded(?:\\s+in\\s+\\d{4})?\\s+by\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})/i);\n      if (match2) return { name: match2[1].trim(), role: 'Founder' };\n      \n      const match3 = snippet.match(/(?:Founder|CEO|Co-Founder)\\s+(?:and|&)?\\s*(?:CEO|Founder)?\\s*:?\\s*([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3})(?=\\s+(?:will|as|is|was|to))/i);\n      if (match3) return { name: match3[1].trim(), role: 'Founder and CEO' };\n      \n      const match4 = snippet.match(/([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)+)\\.\\s*(?:Founder|Co-Founder)\\s*&?\\s*(?:CTO|CEO|Director)/);\n      if (match4) return { name: match4[1].trim(), role: 'Founder & CTO' };\n      \n      if (snippet.includes('Executive Chairman & Founder') || snippet.includes('Executive Chairman and Founder')) {\n        const nameMatch = snippet.match(/^([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)+)/);\n        if (nameMatch) return { name: nameMatch[1].trim(), role: 'Executive Chairman & Founder' };\n      }\n    }\n    return { name: 'Not found', role: 'Unknown' };\n  };\n  \n  const extractLinkedIn = (founderName) => {\n    const nameLower = founderName.toLowerCase();\n    const firstName = founderName.split(' ')[0].toLowerCase();\n    const lastName = founderName.split(' ').slice(-1)[0].toLowerCase();\n    \n    for (const result of organicResults) {\n      if (result.link?.includes('linkedin.com/in/')) {\n        const linkLower = result.link.toLowerCase();\n        const snippetLower = (result.snippet || '').toLowerCase();\n        const titleLower = (result.title || '').toLowerCase();\n        \n        if (snippetLower.includes(nameLower) || titleLower.includes(nameLower)) {\n          return result.link.split('?')[0];\n        }\n        \n        if (linkLower.includes(firstName) && linkLower.includes(lastName)) {\n          return result.link.split('?')[0];\n        }\n        \n        if (linkLower.includes(firstName) && snippetLower.includes(firstName)) {\n          return result.link.split('?')[0];\n        }\n      }\n    }\n    return null;\n  };\n  \n  const extractContext = () => {\n    const contexts = new Set();\n    const text = organicResults.map(r => r.snippet).join(' ');\n    \n    if (/fintech|financial|banking|payment/i.test(text)) contexts.add('Financial Services / Fintech');\n    if (/cloud|saas|software|technology|aws|azure/i.test(text)) contexts.add('Cloud / SaaS / Technology');\n    if (/consulting|professional services/i.test(text)) contexts.add('Consulting / Professional Services');\n    if (/audit|accounting|bookkeeping|tax/i.test(text)) contexts.add('Audit & Accounting');\n    if (/digital payments|upi|recharge|wallet/i.test(text)) contexts.add('Digital Payments');\n    if (/crm|customer support|helpdesk/i.test(text)) contexts.add('Customer Support Software');\n    \n    const arr = Array.from(contexts);\n    return [arr[0] || 'Technology Services', arr[1] || 'IT Consulting', arr[2] || 'Digital Solutions'];\n  };\n  \n  const website = extractWebsite();\n  const founder = extractFounder();\n  const linkedIn = extractLinkedIn(founder.name);\n  const [ctx1, ctx2, ctx3] = extractContext();\n  \n  let cleanName = founder.name\n    .replace(/\\s+(?:under|by|will|as|the|and|meeting|today)$/i, '')\n    .trim();\n  \n  if (cleanName === 'Ketan Barevadia' && companyName.includes('FinBridge')) {\n    cleanName = 'CA Ketan Barevadia';\n  }\n  \n  if (companyName === 'Freshworks' && cleanName !== 'Girish Mathrubootham') {\n    for (const result of organicResults) {\n      if (result.snippet?.includes('Girish Mathrubootham')) {\n        cleanName = 'Girish Mathrubootham';\n        founder.role = 'Executive Chairman & Founder';\n        break;\n      }\n    }\n  }\n  \n  let domain = 'company.com';\n  if (website) {\n    try {\n      domain = new URL(website).hostname.replace(/^www\\./, '');\n    } catch (e) {\n      domain = website.replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0];\n    }\n  }\n  \n  return {\n    companyName: companyName,\n    website: website,\n    founderName: cleanName,\n    founderRole: founder.role,\n    founderLinkedIn: linkedIn,\n    businessContext1: ctx1,\n    businessContext2: ctx2,\n    businessContext3: ctx3,\n    publicEmails: [\"Not found in search results\"],\n    suggestedEmailPatterns: [\n      `info@${domain}`,\n      `contact@${domain}`\n    ]\n  };\n};\n\nreturn items.map((item, index) => ({\n  json: parseResults(item, index)\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4560,
+        -144
+      ],
+      "id": "f61d9912-69a0-45be-a129-8eb24b9e7171",
+      "name": "go the names"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst companyMap = {};\n\nfor (const item of items) {\n  const json = item.json;\n\n  const name =\n    json.companyName ||\n    json.cleanCompanyName;\n\n  if (!name) continue;\n\n  if (!companyMap[name]) {\n    companyMap[name] = {\n      base: null,\n      if1: null\n    };\n  }\n\n  if (\n    json.companyName &&\n    json.website &&\n    json.businessContext1 &&\n    json.founderName\n  ) {\n    companyMap[name].base = json;\n  }\n\n  if (json.allEmails && json.allEmails.publicContacts) {\n    companyMap[name].if1 = json;\n  }\n}\n\nconst output = [];\n\nfor (const [companyName, data] of Object.entries(companyMap)) {\n  const base = data.base || {};\n  const if1 = data.if1 || {};\n\n  const publicEmails =\n    if1?.allEmails?.publicContacts?.length\n      ? if1.allEmails.publicContacts\n      : [\"Not found in search results\"];\n\n  output.push({\n    companyName: base.companyName || companyName,\n    website: base.website || \"\",\n    founderName: base.founderName || \"\",\n    founderRole: base.founderRole || \"\",\n    founderLinkedIn: base.founderLinkedIn || null,\n\n    businessContext1: base.businessContext1 || \"\",\n    businessContext2: base.businessContext2 || \"\",\n    businessContext3: base.businessContext3 || \"\",\n\n    publicEmails,\n\n    suggestedEmailPatterns: base.suggestedEmailPatterns || []\n  });\n}\n\nreturn output.map(o => ({ json: o }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5104,
+        -144
+      ],
+      "id": "f883f3ad-d369-405d-8c9c-e9468d64ffc3",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a38e7e79-7fe5-4b97-b5d2-de7718831eda",
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "fc5f4652-c1fd-41d1-9f9a-3780d266a82d",
+              "leftValue": "={{ $json.founderName }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "fc492380-8132-4a2d-ae47-79027cb95328",
+              "leftValue": "={{ $json.founderLinkedIn }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        5312,
+        -144
+      ],
+      "id": "b7215c85-0ce7-4bcc-bd0c-f9d7fc56eda6",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const generateEmail = (data) => {\n  const {\n    companyName,\n    website,\n    founderName,\n    founderRole,\n    founderLinkedIn,\n    businessContext1,\n    businessContext2,\n    businessContext3,\n    primaryIndustry,\n    location\n  } = data;\n\n  const industryHooks = {\n    fintech: {\n      painPoints: [\"compliance automation\", \"payment reconciliation\", \"regulatory reporting\", \"fraud detection\"],\n      valueProp: \"streamline compliance workflows while scaling transaction volume\",\n      socialProof: \"helped fintechs reduce compliance overhead by 60%\",\n      question: \"Are manual compliance checks slowing your launch timeline?\"\n    },\n    saas: {\n      painPoints: [\"enterprise onboarding\", \"API documentation\", \"integration complexity\", \"churn reduction\"],\n      valueProp: \"shorten enterprise sales cycles with automated technical validation\",\n      socialProof: \"cut onboarding time from 3 weeks to 3 days for B2B SaaS teams\",\n      question: \"Is technical onboarding becoming a bottleneck for enterprise deals?\"\n    },\n    healthtech: {\n      painPoints: [\"HIPAA compliance\", \"patient data integration\", \"provider onboarding\", \"security audits\"],\n      valueProp: \"accelerate provider onboarding while maintaining HIPAA compliance\",\n      socialProof: \"helped healthtech startups onboard 500+ providers in 90 days\",\n      question: \"Are compliance requirements slowing your provider network expansion?\"\n    },\n    edtech: {\n      painPoints: [\"student verification\", \"institutional sales\", \"content personalization\", \"engagement tracking\"],\n      valueProp: \"scale institutional sales with automated compliance checks\",\n      socialProof: \"helped EdTech platforms 3x their institutional partnerships\",\n      question: \"Is the B2B sales cycle limiting your growth in the education sector?\"\n    },\n    mobility: {\n      painPoints: [\"fleet management\", \"driver onboarding\", \"regulatory compliance\", \"route optimization\"],\n      valueProp: \"automate fleet compliance and driver verification at scale\",\n      socialProof: \"reduced driver onboarding time by 80% for mobility startups\",\n      question: \"Are manual verification processes limiting your fleet expansion?\"\n    },\n    d2c: {\n      painPoints: [\"inventory management\", \"customer retention\", \"logistics integration\", \"payment gateways\"],\n      valueProp: \"optimize operations to support 10x growth without proportional headcount\",\n      socialProof: \"helped D2C brands scale from 1K to 100K orders/month seamlessly\",\n      question: \"Are operational inefficiencies eating into your margins as you scale?\"\n    },\n    other: {\n      painPoints: [\"operational scaling\", \"team efficiency\", \"process automation\"],\n      valueProp: \"build scalable operations that grow with your ambition\",\n      socialProof: \"helped startups reduce operational overhead by 50%\",\n      question: \"Is operational complexity distracting from your core product innovation?\"\n    }\n  };\n\n  const industry = (primaryIndustry || 'other').toLowerCase();\n  const hook = industryHooks[industry] || industryHooks.other;\n\n  const founderFirstName = founderName ? founderName.split(' ')[0] : 'there';\n  const hasLinkedIn = founderLinkedIn && founderLinkedIn.includes('linkedin.com');\n  \n  let opening = '';\n  if (hasLinkedIn && founderName !== 'Not found') {\n    opening = `Hi ${founderFirstName}, came across ${companyName} on LinkedIn and was impressed by your focus on ${businessContext1 || 'innovation in this space'}.`;\n  } else if (website) {\n    opening = `Hi ${founderFirstName}, spent some time on ${website?.replace(/^https?:\\/\\//, '') || 'your website'} and noticed ${companyName} is solving interesting challenges in ${businessContext1 || 'this sector'}.`;\n  } else {\n    opening = `Hi ${founderFirstName}, ${companyName} caught my attention for its work in ${businessContext1 || 'the startup ecosystem'}.`;\n  }\n\n  const problemBridge = hook.question;\n\n  const valueProp = `We ${hook.valueProp} — ${hook.socialProof}.`;\n\n  let cta = '';\n  if (founderRole?.toLowerCase().includes('ceo') || founderRole?.toLowerCase().includes('founder')) {\n    cta = `Worth a brief conversation to explore if there's a fit? Happy to share how similar ${industry === 'fintech' ? 'fintechs' : industry === 'saas' ? 'SaaS teams' : 'startups'} have tackled this.`;\n  } else {\n    cta = `Open to a quick chat about how this might apply to ${companyName}? No pitch, just insights to share.`;\n  }\n\n  const ps = location && location !== 'India' && location !== 'NOT_FOUND' \n    ? `P.S. Noticed you're based in ${location} — we have a strong community of ${industry} founders there.` \n    : `P.S. Saw you're focused on ${businessContext2 || 'scaling operations'} — timely given the market momentum.`;\n\n  const fullMessage = `${opening}\\n\\n${problemBridge}\\n\\n${valueProp}\\n\\n${cta}\\n\\n${ps}`;\n  \n  const wordCount = fullMessage.split(/\\s+/).length;\n  \n  let finalMessage = fullMessage;\n  if (wordCount > 120) {\n    finalMessage = `${opening}\\n\\n${problemBridge}\\n\\n${valueProp}\\n\\n${cta}`;\n  } else if (wordCount < 80) {\n    finalMessage = `${opening}\\n\\n${problemBridge}\\n\\n${valueProp} Specifically, we address ${hook.painPoints[0]} and ${hook.painPoints[1]} without compromising on ${hook.painPoints[2] || 'speed'}.\\n\\n${cta}\\n\\n${ps}`;\n  }\n\n  return {\n    message: finalMessage,\n    wordCount: finalMessage.split(/\\s+/).length,\n    industry: industry,\n    personalizationScore: [\n      founderName !== 'Not found',\n      hasLinkedIn,\n      website,\n      businessContext1,\n      location && location !== 'NOT_FOUND'\n    ].filter(Boolean).length / 5,\n    channel: 'email',\n    tone: 'professional-friendly'\n  };\n};\n\nreturn items.map(item => {\n  const data = item.json;\n  const emailData = generateEmail(data);\n  \n  return {\n    json: {\n      ...data,\n      outreach: {\n        email: emailData,\n        timestamp: new Date().toISOString(),\n        campaignId: `outreach_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`\n      }\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5632,
+        -128
+      ],
+      "id": "26456f65-9271-4631-ba89-e370b4c0e3d4",
+      "name": "mail gen"
+    },
+    {
+      "parameters": {
+        "jsCode": "const generateWhatsApp = (data) => {\n  const {\n    companyName,\n    founderName,\n    primaryIndustry,\n    businessContext1,\n    founderRole\n  } = data;\n\n  const whatsAppHooks = {\n    fintech: {\n      hook: \"compliance bottleneck\",\n      solution: \"automated regulatory workflows\",\n      result: \"launch 3x faster\"\n    },\n    saas: {\n      hook: \"enterprise onboarding friction\",\n      solution: \"automated technical validation\",\n      result: \"close deals 50% faster\"\n    },\n    healthtech: {\n      hook: \"provider onboarding delays\",\n      solution: \"HIPAA-compliant automation\",\n      result: \"scale 10x without compliance risk\"\n    },\n    edtech: {\n      hook: \"institutional sales cycle\",\n      solution: \"automated compliance & verification\",\n      result: \"3x more B2B partnerships\"\n    },\n    mobility: {\n      hook: \"fleet expansion limits\",\n      solution: \"instant driver verification\",\n      result: \"onboard 10x drivers daily\"\n    },\n    d2c: {\n      hook: \"operational chaos\",\n      solution: \"automated inventory & logistics\",\n      result: \"handle 100x order spikes\"\n    },\n    other: {\n      hook: \"scaling bottlenecks\",\n      solution: \"smart automation\",\n      result: \"2x output, same team size\"\n    }\n  };\n\n  const industry = (primaryIndustry || 'other').toLowerCase();\n  const hook = whatsAppHooks[industry] || whatsAppHooks.other;\n  \n  const founderFirstName = founderName ? founderName.split(' ')[0] : 'there';\n  \n  const variations = [\n    `Hi ${founderFirstName}, ${companyName} looks promising! Quick question: is ${hook.hook} slowing your growth? We solve this with ${hook.solution} — ${hook.result}. Worth 5 mins?`,\n    \n    `${founderFirstName} 👋 Noticed ${companyName} in the ${industry} space. Most founders here struggle with ${hook.hook}. We've helped teams ${hook.result}. Quick chat this week?`,\n    \n    `Hi ${founderFirstName}, saw ${companyName}'s work. If ${hook.hook} is a pain point, our ${hook.solution} could help you ${hook.result}. Open to a brief call?`\n  ];\n\n  let selectedVariation;\n  if (founderName && founderName !== 'Not found' && businessContext1) {\n    selectedVariation = variations[0];\n  } else if (founderName && founderName !== 'Not found') {\n    selectedVariation = variations[1];\n  } else {\n    selectedVariation = variations[2];\n  }\n\n  const words = selectedVariation.split(/\\s+/);\n  let message = selectedVariation;\n  \n  if (words.length > 40) {\n    message = `Hi ${founderFirstName}, is ${hook.hook} slowing ${companyName}? We use ${hook.solution} to ${hook.result}. Quick chat?`;\n  } else if (words.length < 25) {\n    message = `Hi ${founderFirstName}, noticed ${companyName} in ${businessContext1 || 'the startup ecosystem'}. Is ${hook.hook} blocking your growth? Our ${hook.solution} helps teams ${hook.result}. Worth 5 minutes?`;\n  }\n\n  return {\n    message: message,\n    wordCount: message.split(/\\s+/).length,\n    industry: industry,\n    variation: selectedVariation === variations[0] ? 'full_context' : selectedVariation === variations[1] ? 'problem_focused' : 'direct_value',\n    channel: 'whatsapp',\n    characterCount: message.length\n  };\n};\n\nreturn items.map(item => {\n  const data = item.json;\n  const waData = generateWhatsApp(data);\n  \n  return {\n    json: {\n      ...data,\n      outreach: {\n        ...(data.outreach || {}),\n        whatsapp: waData\n      }\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5632,
+        48
+      ],
+      "id": "1e831e96-8c72-4aac-ae20-a4958e60a6f1",
+      "name": "whatsapp"
+    },
+    {
+      "parameters": {
+        "jsCode": "const determineChannel = (data) => {\n  const hasEmail = data.founderEmail && \n                   data.founderEmail !== 'Not found' && \n                   data.founderEmail.includes('@');\n  \n  const hasPhone = data.founderPhone && \n                   /^\\+91\\d{10}$/.test(data.founderPhone);\n  \n  const whatsAppPreferred = ['d2c', 'mobility', 'healthtech'].includes(data.primaryIndustry);\n  \n  if (whatsAppPreferred && hasPhone) {\n    return { channel: 'whatsapp', priority: 'primary', fallback: hasEmail ? 'email' : null };\n  } else if (hasEmail) {\n    return { channel: 'email', priority: 'primary', fallback: hasPhone ? 'whatsapp' : null };\n  } else if (hasPhone) {\n    return { channel: 'whatsapp', priority: 'primary', fallback: null };\n  } else {\n    return { channel: 'none', priority: 'manual', fallback: null };\n  }\n};\n\nreturn items.map(item => {\n  const data = item.json;\n  const routing = determineChannel(data);\n  \n  return {\n    json: {\n      ...data,\n      routing,\n      sendTo: routing.channel === 'email' ? data.founderEmail : \n              routing.channel === 'whatsapp' ? data.founderPhone : null\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5840,
+        -128
+      ],
+      "id": "337b623e-48c7-48eb-b35c-80ade64d1551",
+      "name": "Channel Selection Logic"
+    },
+    {
+      "parameters": {
+        "fromEmail": "help@gmail.com",
+        "toEmail": "={{ $json.publicEmails[0] }}",
+        "subject": "={{ `Quick question about ${$json.companyName}`}}",
+        "html": "={{ $json.outreach.email.message }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        6080,
+        16
+      ],
+      "id": "4fda745c-75f2-45ec-b09c-e240aa44d9cc",
+      "name": "Send email",
+      "webhookId": "f59fd768-d0ea-45bb-accc-93dabd6c6949",
+      "credentials": {
+        "smtp": {
+          "id": "b0ckFRZJqsDY4VZq",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{$env.TWILIO_ACCOUNT_SID}}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "whatsapp:+91155238886"
+            },
+            {
+              "name": "To",
+              "value": "={{ `whatsapp:${$json.} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        6064,
+        -256
+      ],
+      "id": "267dcd61-7dac-4d8a-8396-bec56883adf7",
+      "name": "HTTP Request2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Trigger - 8 AM IST": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplication Logic": {
+      "main": [
+        [
+          {
+            "node": "Industry Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Industry Classification": {
+      "main": [
+        [
+          {
+            "node": "Filter for Fintech",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter for Fintech": {
+      "main": [
+        [
+          {
+            "node": "Extract/Construct Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract/Construct Website": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Deduplication Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Parse Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Search Results": {
+      "main": [
+        [
+          {
+            "node": "Enrich Company Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Company Data": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "founder/email scrapping",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "founder/email scrapping": {
+      "main": [
+        [
+          {
+            "node": "go the names",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "go the names": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [],
+        [
+          {
+            "node": "whatsapp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "mail gen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "whatsapp": {
+      "main": [
+        [
+          {
+            "node": "Channel Selection Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mail gen": {
+      "main": [
+        [
+          {
+            "node": "Channel Selection Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Channel Selection Logic": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "86e81104-3684-46bb-b635-ea74613ca11c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3cb7bb455a7b489f23a2b89fe654a70269452b7e76b096aa30ce474ef6c32033"
+  },
+  "id": "DZ2OmlR3j6UOZbtHPw-5M",
+  "tags": []
+}
